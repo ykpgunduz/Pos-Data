@@ -21,6 +21,7 @@ class PastItem extends Model
      */
     public function pastOrder(): BelongsTo
     {
-        return $this->belongsTo(PastOrder::class, 'order_number', 'order_number');
+        return $this->belongsTo(PastOrder::class, 'order_number', 'order_number')
+                    ->where('cafe_id', $this->cafe_id);
     }
 }

@@ -224,9 +224,9 @@ class ReportController extends Controller
         $cafeId = $request->cafe_id;
 
         $periods = DailySalesSummary::where('cafe_id', $cafeId)
-            ->selectRaw('YEAR(date) as year, MONTH(date) as month, SUM(total_orders) as order_count')
-            ->groupByRaw('YEAR(date), MONTH(date)')
-            ->orderByRaw('YEAR(date) DESC, MONTH(date) DESC')
+            ->selectRaw('EXTRACT(YEAR FROM date) as year, EXTRACT(MONTH FROM date) as month, SUM(total_orders) as order_count')
+            ->groupByRaw('EXTRACT(YEAR FROM date), EXTRACT(MONTH FROM date)')
+            ->orderByRaw('EXTRACT(YEAR FROM date) DESC, EXTRACT(MONTH FROM date) DESC')
             ->get();
 
         $years = $periods->pluck('year')->unique()->sort()->reverse()->values();

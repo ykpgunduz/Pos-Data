@@ -70,6 +70,11 @@ class AggregatePastOrdersJob implements ShouldQueue
             $query->where('cafe_id', $this->cafeId);
         }
 
+        $isPgsql = DB::connection()->getDriverName() === 'pgsql';
+        $ibanSql = $isPgsql
+            ? "SUM(CASE WHEN iban ~ '^[0-9]+$' AND cari_account_id IS NULL THEN CAST(iban AS BIGINT) ELSE 0 END) as total_iban"
+            : "SUM(CASE WHEN iban REGEXP '^[0-9]+$' AND cari_account_id IS NULL THEN CAST(iban AS UNSIGNED) ELSE 0 END) as total_iban";
+
         // Cafe bazında gruplayıp chunk ile işle
         $query->select(
             'cafe_id',
@@ -78,7 +83,7 @@ class AggregatePastOrdersJob implements ShouldQueue
             DB::raw('SUM(net_amount) as total_net_amount'),
             DB::raw('SUM(COALESCE(cash, 0)) as total_cash'),
             DB::raw('SUM(COALESCE(card, 0)) as total_card'),
-            DB::raw("SUM(CASE WHEN iban REGEXP '^[0-9]+$' AND cari_account_id IS NULL THEN CAST(iban AS UNSIGNED) ELSE 0 END) as total_iban"),
+            DB::raw($ibanSql),
             DB::raw('SUM(COALESCE(treat, 0)) as total_treat'),
             DB::raw('SUM(COALESCE(discount, 0)) as total_discount'),
             DB::raw('SUM(COALESCE(customer, 0)) as total_customers'),
