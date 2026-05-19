@@ -28,9 +28,5 @@ COPY . .
 # Gerekirse proje bağımlılıklarını yükleyin
 RUN composer install
 
-# Başlangıç scriptini kopyala ve çalıştırılabilir yap
-COPY start.sh /usr/local/bin/start.sh
-RUN chmod +x /usr/local/bin/start.sh
-
-# Container başlarken migration çalıştır, sonra sunucuyu başlat
-CMD ["/usr/local/bin/start.sh"]
+# Container başlarken sunucuyu doğrudan başlat
+CMD php artisan serve --host=0.0.0.0 --port=80
