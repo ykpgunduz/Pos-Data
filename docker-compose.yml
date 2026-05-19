@@ -18,20 +18,16 @@ services:
       - LANG=tr_TR.UTF-8
 
   db:
-    image: mysql:8.0
+    image: postgres:15
     container_name: pos-data-db
     volumes:
-      - mysql-data:/var/lib/mysql
+      - pgsql-data:/var/lib/postgresql/data
     environment:
-      MYSQL_ROOT_HOST: "%"
-      MYSQL_ROOT_PASSWORD: root_password
-      MYSQL_DATABASE: harpos_data
-      MYSQL_USER: laravel_user
-      MYSQL_PASSWORD: root
-      MYSQL_CHARSET: utf8mb4
-      MYSQL_COLLATION: utf8mb4_unicode_ci
+      POSTGRES_DB: harpos_data
+      POSTGRES_USER: laravel_user
+      POSTGRES_PASSWORD: root_password
     ports:
-      - "3355:3306"
+      - "5432:5432"
     networks:
       - pos-data-network
 
@@ -39,4 +35,4 @@ networks:
   pos-data-network:
 
 volumes:
-  mysql-data:
+  pgsql-data:

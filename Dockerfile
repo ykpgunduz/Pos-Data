@@ -1,9 +1,10 @@
 # PHP 8.4 imajını kullanalım
 FROM php:8.4-fpm
 
-# ICU ve gerekli araçları yükleyin
+# ICU ve PostgreSQL için gerekli araçları yükleyin
 RUN apt-get update && apt-get install -y \
     libicu-dev \
+    libpq-dev \
     libzip-dev \
     zip \
     unzip \
@@ -13,7 +14,7 @@ RUN apt-get update && apt-get install -y \
 # PHP eklentilerini yükleyin
 RUN docker-php-ext-install intl \
     && docker-php-ext-configure zip --with-zip \
-    && docker-php-ext-install zip pdo pdo_mysql
+    && docker-php-ext-install zip pdo pdo_pgsql pgsql
 
 # Composer'ı yükleyin
 RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
