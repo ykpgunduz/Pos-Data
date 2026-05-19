@@ -6,7 +6,7 @@ services:
       dockerfile: Dockerfile
     image: pos-data-api
     ports:
-      - "2026:80"
+      - "2024:80"
     volumes:
       - .:/var/www
     depends_on:
