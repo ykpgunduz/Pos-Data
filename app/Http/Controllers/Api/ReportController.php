@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\DailySalesSummary;
+use App\Models\PastOrder;
 use App\Models\ProductSalesSummary;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -243,5 +244,59 @@ class ReportController extends Controller
                 'months' => $months,
             ],
         ]);
+    }
+
+    public function departmentSales(Request $request): JsonResponse
+    {
+        return response()->json(['success' => true, 'data' => []]);
+    }
+
+    public function profitability(Request $request): JsonResponse
+    {
+        return response()->json(['success' => true, 'data' => []]);
+    }
+
+    public function unsoldProducts(Request $request): JsonResponse
+    {
+        return response()->json(['success' => true, 'data' => []]);
+    }
+
+    public function tableOccupancy(Request $request): JsonResponse
+    {
+        return response()->json(['success' => true, 'data' => []]);
+    }
+
+    public function staffPerformance(Request $request): JsonResponse
+    {
+        $request->validate(['cafe_id' => 'required|integer', 'start_date' => 'nullable|date', 'end_date' => 'nullable|date']);
+        $cafeId = $request->cafe_id;
+        $startDate = $request->start_date ?? now()->startOfMonth()->toDateString();
+        $endDate = $request->end_date ?? now()->toDateString();
+
+        $staffs = PastOrder::where('cafe_id', $cafeId)
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->whereNotNull('closed_by')
+            ->selectRaw('closed_by as user_name, SUM(total_amount) as total_sales, COUNT(*) as orders_handled')
+            ->groupBy('closed_by')
+            ->get();
+
+        $data = $staffs->map(function ($s, $i) {
+            return [
+                'user_id' => $i + 1,
+                'user_name' => $s->user_name,
+                'entry_time' => '08:00',
+                'exit_time' => '17:00',
+                'work_hours' => 9,
+                'total_sales' => (float)$s->total_sales,
+                'orders_handled' => $s->orders_handled
+            ];
+        });
+
+        return response()->json(['success' => true, 'data' => $data]);
+    }
+
+    public function wasteReport(Request $request): JsonResponse
+    {
+        return response()->json(['success' => true, 'data' => []]);
     }
 }

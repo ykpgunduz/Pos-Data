@@ -28,5 +28,11 @@ Route::middleware('service.token')->group(function () {
         Route::get('product-sales',           [ReportController::class, 'productSales']);
         Route::get('complimentary-discount',  [ReportController::class, 'complimentaryDiscount']);
         Route::get('available-periods',       [ReportController::class, 'availablePeriods']);
+        Route::get('department-sales',        [ReportController::class, 'departmentSales']);
+        Route::get('profitability',           [ReportController::class, 'profitability']);
+        Route::get('unsold-products',         [ReportController::class, 'unsoldProducts']);
+        Route::get('table-occupancy',         [ReportController::class, 'tableOccupancy']);
+        Route::get('staff-performance',       [ReportController::class, 'staffPerformance']);
+        Route::get('waste-report',            [ReportController::class, 'wasteReport']);
     });
 });
