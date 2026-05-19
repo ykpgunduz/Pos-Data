@@ -18,6 +18,7 @@ Route::middleware('service.token')->group(function () {
 
     // ── Ham Veri Girişi ──
     Route::post('past-orders', [PastOrderController::class, 'store']);
+    Route::get('past-orders/report', [PastOrderController::class, 'report']);
     Route::get('past-orders/{orderNumber}', [PastOrderController::class, 'show']);
 
     // ── Rapor Uç Noktaları (Pre-aggregated) ──

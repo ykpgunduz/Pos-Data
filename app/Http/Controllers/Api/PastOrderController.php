@@ -131,4 +131,80 @@ class PastOrderController extends Controller
             'data'    => $order,
         ]);
     }
+
+    /**
+     * Adisyon Raporu
+     *
+     * GET /api/past-orders/report
+     */
+    public function report(Request $request): JsonResponse
+    {
+        $request->validate(['cafe_id' => 'required|integer']);
+
+        $query = PastOrder::where('cafe_id', $request->cafe_id)
+            ->with('items');
+
+        if ($request->has('start_date') && $request->has('end_date')) {
+            $query->whereBetween('created_at', [
+                $request->start_date,
+                $request->end_date
+            ]);
+        }
+
+        // Klon oluşturarak özet hesapla
+        $summaryQuery = clone $query;
+        $summaryData = clone $query;
+        
+        $totals = $summaryQuery->select(
+            DB::raw('COUNT(id) as total_orders'),
+            DB::raw('SUM(customer_male + customer_female + customer_child) as total_customers'),
+            DB::raw('SUM(customer_male) as total_customer_male'),
+            DB::raw('SUM(customer_female) as total_customer_female'),
+            DB::raw('SUM(customer_child) as total_customer_child'),
+            DB::raw('SUM(cash) as total_cash'),
+            DB::raw('SUM(card) as total_card'),
+            DB::raw('SUM(CAST(iban AS NUMERIC)) as total_iban'),
+            DB::raw('SUM(treat) as total_treat'),
+            DB::raw('SUM(total_amount) as total_gross'),
+            DB::raw('SUM(net_amount) as total_net')
+        )->first();
+
+        // Cari hesapları hesapla (şu anki query'de cari alanı yok, eğer eklerseniz toplayın. Burada DB tablosu bazında sum)
+        $totalCari = $summaryData->whereNotNull('cari_account_id')->sum('total_amount');
+
+        $summary = [
+            'total_orders'          => (int) ($totals->total_orders ?? 0),
+            'total_customers'       => (int) ($totals->total_customers ?? 0),
+            'total_customer_male'   => (int) ($totals->total_customer_male ?? 0),
+            'total_customer_female' => (int) ($totals->total_customer_female ?? 0),
+            'total_customer_child'  => (int) ($totals->total_customer_child ?? 0),
+            'total_cash'            => (int) ($totals->total_cash ?? 0),
+            'total_card'            => (int) ($totals->total_card ?? 0),
+            'total_iban'            => (int) ($totals->total_iban ?? 0),
+            'total_cari'            => (int) $totalCari,
+            'total_treat'           => (int) ($totals->total_treat ?? 0),
+            'total_gross'           => (int) ($totals->total_gross ?? 0),
+            'total_net'             => (int) ($totals->total_net ?? 0),
+        ];
+
+        // Period hesapla (Basit)
+        $periods = [
+            'morning'   => ['total' => 0, 'customers' => 0, 'per_person' => 0],
+            'afternoon' => ['total' => 0, 'customers' => 0, 'per_person' => 0],
+            'evening'   => ['total' => 0, 'customers' => 0, 'per_person' => 0],
+        ];
+
+        // Sayfalama
+        $perPage = $request->input('per_page', 60);
+        $orders = $query->orderBy('created_at', 'desc')->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'data'    => [
+                'periods' => $periods,
+                'orders'  => $orders,
+                'summary' => $summary,
+            ],
+        ]);
+    }
 }
