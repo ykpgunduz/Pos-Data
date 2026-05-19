@@ -10,6 +10,7 @@ class DailySalesSummary extends Model
         'cafe_id',
         'date',
         'total_turnover',
+        'total_cost',
         'total_orders',
         'total_net_amount',
         'total_tax_amount',

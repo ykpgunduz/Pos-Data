@@ -49,6 +49,7 @@ class ReportController extends Controller
         $totalMale      = $summaries->sum('total_customer_male');
         $totalFemale    = $summaries->sum('total_customer_female');
         $totalChild     = $summaries->sum('total_customer_child');
+        $totalCost      = $summaries->sum('total_cost');
 
         // Ödeme türleri
         $paymentTypes = [
@@ -64,6 +65,9 @@ class ReportController extends Controller
             'orders' => $s->total_orders,
         ])->values();
 
+        // Kar = Net Ciro (KDV hariç) - Toplam Gider
+        $totalProfit = $totalNet - $totalCost;
+
         return response()->json([
             'success' => true,
             'data'    => [
@@ -78,6 +82,8 @@ class ReportController extends Controller
                 'total_tax'           => $totalTax,
                 'total_treat'         => $totalTreat,
                 'total_discount'      => $totalDiscount,
+                'total_expense'       => $totalCost,
+                'total_profit'        => $totalProfit,
                 'payment_types'       => $paymentTypes,
                 'daily_series'        => $dailySeries,
             ],

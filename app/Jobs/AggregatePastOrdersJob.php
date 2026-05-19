@@ -98,6 +98,12 @@ class AggregatePastOrdersJob implements ShouldQueue
                 // Vergi hesabı: Brüt - Net = Vergi (yaklaşık)
                 $taxAmount = max(0, (int) $row->total_turnover - (int) $row->total_net_amount);
 
+                // Toplam maliyeti bul (cost * quantity)
+                $totalCost = \App\Models\PastItem::where('cafe_id', $row->cafe_id)
+                    ->whereDate('created_at', $date)
+                    ->select(DB::raw('SUM(cost * quantity) as total_cost'))
+                    ->value('total_cost') ?? 0;
+
                 DailySalesSummary::updateOrCreate(
                     [
                         'cafe_id' => $row->cafe_id,
@@ -105,6 +111,7 @@ class AggregatePastOrdersJob implements ShouldQueue
                     ],
                     [
                         'total_turnover'       => (int) $row->total_turnover,
+                        'total_cost'           => (int) $totalCost,
                         'total_orders'         => (int) $row->total_orders,
                         'total_net_amount'     => (int) $row->total_net_amount,
                         'total_tax_amount'     => $taxAmount,

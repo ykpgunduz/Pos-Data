@@ -14,6 +14,8 @@ class PastItem extends Model
         'product_name',
         'quantity',
         'price',
+        'cost',
+        'tax_rate',
     ];
 
     /**

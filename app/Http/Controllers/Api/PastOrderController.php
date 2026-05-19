@@ -44,7 +44,9 @@ class PastOrderController extends Controller
             'items.*.product_id'   => 'nullable|integer',
             'items.*.product_name' => 'nullable|string|max:255',
             'items.*.quantity'     => 'nullable|integer|min:1',
-            'items.*.price'        => 'nullable|integer',
+            'items.*.price'        => 'nullable|numeric',
+            'items.*.cost'         => 'nullable|numeric',
+            'items.*.tax_rate'     => 'nullable|numeric',
         ]);
 
         try {
@@ -73,6 +75,8 @@ class PastOrderController extends Controller
                             'product_name' => $item['product_name'] ?? null,
                             'quantity'     => $item['quantity'] ?? 1,
                             'price'        => $item['price'] ?? 0,
+                            'cost'         => $item['cost'] ?? 0,
+                            'tax_rate'     => $item['tax_rate'] ?? 0,
                         ]);
                     }
                 }
