@@ -81,7 +81,7 @@ class PastOrderController extends Controller
             });
 
             // Raporları anında güncelle (Bugün için)
-            AggregatePastOrdersJob::dispatch(now()->toDateString(), $validated['cafe_id']);
+            AggregatePastOrdersJob::dispatchSync(now()->toDateString(), $validated['cafe_id']);
 
             return response()->json([
                 'success' => true,
