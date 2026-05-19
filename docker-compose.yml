@@ -1,0 +1,42 @@
+services:
+  app:
+    container_name: pos-data-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pos-data-api
+    ports:
+      - "2026:80"
+    volumes:
+      - .:/var/www
+    depends_on:
+      - db
+    networks:
+      - pos-data-network
+    environment:
+      - LC_ALL=tr_TR.UTF-8
+      - LANG=tr_TR.UTF-8
+
+  db:
+    image: mysql:8.0
+    container_name: pos-data-db
+    volumes:
+      - mysql-data:/var/lib/mysql
+    environment:
+      MYSQL_ROOT_HOST: "%"
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: harpos_data
+      MYSQL_USER: laravel_user
+      MYSQL_PASSWORD: root
+      MYSQL_CHARSET: utf8mb4
+      MYSQL_COLLATION: utf8mb4_unicode_ci
+    ports:
+      - "3355:3306"
+    networks:
+      - pos-data-network
+
+networks:
+  pos-data-network:
+
+volumes:
+  mysql-data:
