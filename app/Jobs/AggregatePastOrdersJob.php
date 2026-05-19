@@ -99,7 +99,7 @@ class AggregatePastOrdersJob implements ShouldQueue
                 $taxAmount = max(0, (int) $row->total_turnover - (int) $row->total_net_amount);
 
                 // Toplam maliyeti bul (cost * quantity)
-                $totalCost = \App\Models\PastItem::where('cafe_id', $row->cafe_id)
+                $totalCost = PastItem::where('cafe_id', $row->cafe_id)
                     ->whereDate('created_at', $date)
                     ->select(DB::raw('SUM(cost * quantity) as total_cost'))
                     ->value('total_cost') ?? 0;
