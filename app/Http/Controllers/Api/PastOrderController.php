@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\PastItem;
 use App\Models\PastOrder;
+use App\Jobs\AggregatePastOrdersJob;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -78,6 +79,9 @@ class PastOrderController extends Controller
 
                 return $pastOrder;
             });
+
+            // Raporları anında güncelle (Bugün için)
+            AggregatePastOrdersJob::dispatch(now()->toDateString(), $validated['cafe_id']);
 
             return response()->json([
                 'success' => true,
