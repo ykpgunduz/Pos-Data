@@ -38,7 +38,6 @@ class PastOrder extends Model
      */
     public function items(): HasMany
     {
-        return $this->hasMany(PastItem::class, 'order_number', 'order_number')
-                    ->where('past_items.cafe_id', $this->cafe_id);
+        return $this->hasMany(PastItem::class, 'order_number', 'order_number');
     }
 }

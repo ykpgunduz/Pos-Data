@@ -116,7 +116,9 @@ class PastOrderController extends Controller
 
         $order = PastOrder::where('cafe_id', $request->cafe_id)
             ->where('order_number', $orderNumber)
-            ->with('items')
+            ->with(['items' => function ($q) use ($request) {
+                $q->where('cafe_id', $request->cafe_id);
+            }])
             ->first();
 
         if (!$order) {
@@ -142,7 +144,9 @@ class PastOrderController extends Controller
         $request->validate(['cafe_id' => 'required|integer']);
 
         $query = PastOrder::where('cafe_id', $request->cafe_id)
-            ->with('items');
+            ->with(['items' => function ($q) use ($request) {
+                $q->where('cafe_id', $request->cafe_id);
+            }]);
 
         if ($request->has('start_date') && $request->has('end_date')) {
             $query->whereBetween('created_at', [
