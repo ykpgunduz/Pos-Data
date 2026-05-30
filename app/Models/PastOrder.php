@@ -25,6 +25,8 @@ class PastOrder extends Model
         'discount',
         'self_treat',
         'closed_by',
+        'opened_by_name',
+        'closed_by_name',
     ];
 
     protected $attributes = [

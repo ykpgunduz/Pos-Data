@@ -20,6 +20,7 @@ Route::middleware('service.token')->group(function () {
     Route::post('past-orders', [PastOrderController::class, 'store']);
     Route::get('past-orders/report', [PastOrderController::class, 'report']);
     Route::get('past-orders/{orderNumber}', [PastOrderController::class, 'show']);
+    Route::put('past-orders/{orderNumber}', [PastOrderController::class, 'update']);
 
     // ── Rapor Uç Noktaları (Pre-aggregated) ──
     Route::prefix('reports')->group(function () {

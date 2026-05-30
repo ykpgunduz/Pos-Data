@@ -39,6 +39,8 @@ class PastOrderController extends Controller
             'discount'         => 'nullable|integer',
             'self_treat'       => 'nullable|string',
             'closed_by'        => 'nullable|string|max:100',
+            'opened_by_name'   => 'nullable|string|max:100',
+            'closed_by_name'   => 'nullable|string|max:100',
             // Ürün detayları
             'items'            => 'nullable|array',
             'items.*.product_id'   => 'nullable|integer',
@@ -132,6 +134,71 @@ class PastOrderController extends Controller
             'success' => true,
             'data'    => $order,
         ]);
+    }
+
+    /**
+     * Geçmiş Siparişi Düzenle (Sadece ödeme tipleri ve misafir sayısı)
+     *
+     * PUT /api/past-orders/{orderNumber}
+     */
+    public function update(Request $request, string $orderNumber): JsonResponse
+    {
+        $validated = $request->validate([
+            'cafe_id'          => 'required|integer',
+            'customer_male'    => 'nullable|integer|min:0',
+            'customer_female'  => 'nullable|integer|min:0',
+            'customer_child'   => 'nullable|integer|min:0',
+            'cash'             => 'nullable|integer',
+            'card'             => 'nullable|integer',
+            'iban'             => 'nullable|string',
+            'treat'            => 'nullable|integer',
+            'discount'         => 'nullable|integer',
+        ]);
+
+        $order = PastOrder::where('cafe_id', $validated['cafe_id'])
+            ->where('order_number', $orderNumber)
+            ->first();
+
+        if (!$order) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Sipariş bulunamadı.',
+            ], 404);
+        }
+
+        try {
+            DB::transaction(function () use ($order, $validated) {
+                if (isset($validated['customer_male'])) $order->customer_male = $validated['customer_male'];
+                if (isset($validated['customer_female'])) $order->customer_female = $validated['customer_female'];
+                if (isset($validated['customer_child'])) $order->customer_child = $validated['customer_child'];
+                
+                $order->customer = $order->customer_male + $order->customer_female + $order->customer_child;
+
+                if (array_key_exists('cash', $validated)) $order->cash = $validated['cash'];
+                if (array_key_exists('card', $validated)) $order->card = $validated['card'];
+                if (array_key_exists('iban', $validated)) $order->iban = $validated['iban'];
+                if (array_key_exists('treat', $validated)) $order->treat = $validated['treat'];
+                if (array_key_exists('discount', $validated)) $order->discount = $validated['discount'];
+
+                $order->save();
+            });
+
+            // Raporları güncel tarih için tekrar hesapla (Siparişin asıl tarihi)
+            $orderDate = $order->created_at->toDateString();
+            AggregatePastOrdersJob::dispatchSync($orderDate, $validated['cafe_id']);
+
+            return response()->json([
+                'success' => true,
+                'data'    => $order,
+                'message' => 'Sipariş başarıyla güncellendi.',
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('PastOrder update hatası: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Sipariş güncellenemedi.',
+            ], 500);
+        }
     }
 
     /**
