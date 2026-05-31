@@ -27,6 +27,8 @@ return new class extends Migration
             $table->integer('discount')->nullable();
             $table->string('self_treat')->nullable();
             $table->string('closed_by')->nullable();
+            $table->string('opened_by_name')->nullable();
+            $table->string('closed_by_name')->nullable();
             $table->timestamps();
 
             $table->index(['cafe_id', 'created_at']);

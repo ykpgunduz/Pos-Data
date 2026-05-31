@@ -258,11 +258,40 @@ class PastOrderController extends Controller
             'total_net'             => (int) ($totals->total_net ?? 0),
         ];
 
-        // Period hesapla (Basit)
+        // Period hesapla (Dinamik)
+        $periodsQuery = clone $query;
+        $periodsResult = $periodsQuery->select(
+            DB::raw("SUM(CASE WHEN EXTRACT(HOUR FROM created_at) >= 10 AND EXTRACT(HOUR FROM created_at) < 14 THEN total_amount ELSE 0 END) as morning_total"),
+            DB::raw("SUM(CASE WHEN EXTRACT(HOUR FROM created_at) >= 10 AND EXTRACT(HOUR FROM created_at) < 14 THEN (customer_male + customer_female + customer_child) ELSE 0 END) as morning_customers"),
+            DB::raw("SUM(CASE WHEN EXTRACT(HOUR FROM created_at) >= 14 AND EXTRACT(HOUR FROM created_at) < 18 THEN total_amount ELSE 0 END) as afternoon_total"),
+            DB::raw("SUM(CASE WHEN EXTRACT(HOUR FROM created_at) >= 14 AND EXTRACT(HOUR FROM created_at) < 18 THEN (customer_male + customer_female + customer_child) ELSE 0 END) as afternoon_customers"),
+            DB::raw("SUM(CASE WHEN EXTRACT(HOUR FROM created_at) >= 18 OR EXTRACT(HOUR FROM created_at) < 10 THEN total_amount ELSE 0 END) as evening_total"),
+            DB::raw("SUM(CASE WHEN EXTRACT(HOUR FROM created_at) >= 18 OR EXTRACT(HOUR FROM created_at) < 10 THEN (customer_male + customer_female + customer_child) ELSE 0 END) as evening_customers")
+        )->first();
+
+        $morningTotal = (int) ($periodsResult->morning_total ?? 0);
+        $morningCustomers = (int) ($periodsResult->morning_customers ?? 0);
+        $afternoonTotal = (int) ($periodsResult->afternoon_total ?? 0);
+        $afternoonCustomers = (int) ($periodsResult->afternoon_customers ?? 0);
+        $eveningTotal = (int) ($periodsResult->evening_total ?? 0);
+        $eveningCustomers = (int) ($periodsResult->evening_customers ?? 0);
+
         $periods = [
-            'morning'   => ['total' => 0, 'customers' => 0, 'per_person' => 0],
-            'afternoon' => ['total' => 0, 'customers' => 0, 'per_person' => 0],
-            'evening'   => ['total' => 0, 'customers' => 0, 'per_person' => 0],
+            'morning'   => [
+                'total' => $morningTotal, 
+                'customers' => $morningCustomers, 
+                'per_person' => $morningCustomers > 0 ? round($morningTotal / $morningCustomers, 2) : 0
+            ],
+            'afternoon' => [
+                'total' => $afternoonTotal, 
+                'customers' => $afternoonCustomers, 
+                'per_person' => $afternoonCustomers > 0 ? round($afternoonTotal / $afternoonCustomers, 2) : 0
+            ],
+            'evening'   => [
+                'total' => $eveningTotal, 
+                'customers' => $eveningCustomers, 
+                'per_person' => $eveningCustomers > 0 ? round($eveningTotal / $eveningCustomers, 2) : 0
+            ],
         ];
 
         // Sayfalama
