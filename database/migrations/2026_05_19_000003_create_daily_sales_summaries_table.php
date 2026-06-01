@@ -13,6 +13,7 @@ return new class extends Migration
             $table->unsignedBigInteger('cafe_id');
             $table->date('date');
             $table->integer('total_turnover')->default(0);
+            $table->integer('total_cost')->default(0);
             $table->integer('total_orders')->default(0);
             $table->integer('total_net_amount')->default(0);
             $table->integer('total_tax_amount')->default(0);

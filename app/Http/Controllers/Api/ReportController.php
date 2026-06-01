@@ -303,6 +303,29 @@ class ReportController extends Controller
 
     public function wasteReport(Request $request): JsonResponse
     {
-        return response()->json(['success' => true, 'data' => []]);
+        $request->validate([
+            'cafe_id'    => 'required|integer',
+            'start_date' => 'nullable|date',
+            'end_date'   => 'nullable|date',
+        ]);
+
+        $cafeId    = $request->cafe_id;
+        $startDate = $request->start_date ?? now()->startOfMonth()->toDateString();
+        $endDate   = $request->end_date   ?? now()->toDateString();
+
+        $wastages = \App\Models\Wastage::where('cafe_id', $cafeId)
+            ->whereBetween('date', [$startDate, $endDate])
+            ->orderBy('date', 'desc')
+            ->get();
+
+        $totalCost = $wastages->sum('cost');
+
+        return response()->json([
+            'success' => true,
+            'data'    => [
+                'items'      => $wastages,
+                'total_cost' => $totalCost,
+            ]
+        ]);
     }
 }

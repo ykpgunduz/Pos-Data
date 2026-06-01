@@ -16,6 +16,8 @@ return new class extends Migration
             $table->string('product_name')->nullable();
             $table->integer('quantity')->default(1);
             $table->integer('price')->default(0);
+            $table->decimal('cost', 10, 2)->default(0);
+            $table->decimal('tax_rate', 5, 2)->default(0);
             $table->timestamps();
 
             $table->index('order_number');
