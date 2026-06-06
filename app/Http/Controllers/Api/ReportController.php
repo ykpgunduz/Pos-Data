@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\DailySalesSummary;
+use App\Models\PastItem;
 use App\Models\PastOrder;
 use App\Models\ProductSalesSummary;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ReportController extends Controller
 {
@@ -126,6 +128,8 @@ class ReportController extends Controller
     /**
      * KDV ve Vergi Raporu
      * GET /api/reports/tax-report?cafe_id=X&start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
+     *
+     * past_items tablosundan her ürünün tax_rate alanına göre dinamik KDV kırılımı üretir.
      */
     public function taxReport(Request $request): JsonResponse
     {
@@ -139,21 +143,54 @@ class ReportController extends Controller
         $startDate = $request->start_date ?? now()->startOfMonth()->toDateString();
         $endDate   = $request->end_date   ?? now()->toDateString();
 
-        $summaries = DailySalesSummary::where('cafe_id', $cafeId)
-            ->whereBetween('date', [$startDate, $endDate])
+        // past_items tablosundan tax_rate bazında gruplama
+        // price alanı KDV dahil brüt fiyattır, quantity ile çarpılır
+        $brackets = PastItem::where('past_items.cafe_id', $cafeId)
+            ->join('past_orders', function ($join) use ($cafeId) {
+                $join->on('past_items.order_number', '=', 'past_orders.order_number')
+                     ->where('past_orders.cafe_id', '=', $cafeId);
+            })
+            ->whereBetween('past_orders.created_at', [$startDate, $endDate])
+            ->select(
+                'past_items.tax_rate',
+                DB::raw('SUM(past_items.quantity * past_items.price) as gross_sales')
+            )
+            ->groupBy('past_items.tax_rate')
+            ->orderBy('past_items.tax_rate')
             ->get();
 
-        $totalGross = $summaries->sum('total_turnover');
-        $totalTax   = $summaries->sum('total_tax_amount');
-        $totalNet   = $summaries->sum('total_net_amount');
+        $colors = [
+            'hsl(199, 89%, 48%)',   // sky
+            'hsl(217, 91%, 60%)',   // blue
+            'hsl(262, 83%, 58%)',   // violet
+            'hsl(280, 67%, 55%)',   // purple
+            'hsl(339, 70%, 55%)',   // rose
+            'hsl(25, 95%, 53%)',    // orange
+            'hsl(142, 71%, 45%)',   // green
+        ];
+
+        $data = $brackets->values()->map(function ($row, $index) use ($colors) {
+            $rate       = (float) $row->tax_rate;
+            $grossSales = (float) $row->gross_sales;
+
+            // Brüt satıştan (KDV dahil fiyat) matrah ve KDV'yi ayır
+            // Matrah = Brüt / (1 + oran/100)
+            $netSales  = $rate > 0 ? round($grossSales / (1 + $rate / 100), 2) : $grossSales;
+            $taxAmount = round($grossSales - $netSales, 2);
+
+            return [
+                'bracket'    => '%' . intval($rate) . ' KDV',
+                'rate'       => $rate,
+                'netSales'   => $netSales,
+                'taxAmount'  => $taxAmount,
+                'grossSales' => $grossSales,
+                'color'      => $colors[$index % count($colors)] ?? 'hsl(0, 0%, 50%)',
+            ];
+        });
 
         return response()->json([
             'success' => true,
-            'data'    => [
-                'total_gross'  => $totalGross,
-                'total_tax'    => $totalTax,
-                'total_net'    => $totalNet,
-            ],
+            'data'    => $data,
         ]);
     }
 
@@ -252,24 +289,190 @@ class ReportController extends Controller
         ]);
     }
 
+    /**
+     * Departman / Kategori Bazlı Satış Raporu
+     * past_orders tablosundan Masa vs Paket/Hızlı ayrımı yapar.
+     */
     public function departmentSales(Request $request): JsonResponse
     {
-        return response()->json(['success' => true, 'data' => []]);
+        $request->validate([
+            'cafe_id'    => 'required|integer',
+            'start_date' => 'nullable|date',
+            'end_date'   => 'nullable|date',
+        ]);
+
+        $cafeId    = $request->cafe_id;
+        $startDate = $request->start_date ?? now()->startOfMonth()->toDateString();
+        $endDate   = $request->end_date   ?? now()->toDateString();
+
+        // Masa siparişleri: table_number NOT NULL
+        // Paket/Hızlı: table_number IS NULL veya order_number QS- ile başlayan
+        $orders = PastOrder::where('cafe_id', $cafeId)
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->select(
+                DB::raw("CASE WHEN order_number LIKE 'QS-%' OR table_number IS NULL THEN 'Paket/Hızlı' ELSE 'Masa' END as department"),
+                DB::raw('COUNT(*) as total_orders'),
+                DB::raw('SUM(total_amount) as total_amount')
+            )
+            ->groupBy('department')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data'    => $orders,
+        ]);
     }
 
+    /**
+     * Karlılık Raporu
+     * past_items tablosundan ürün bazlı maliyet, ciro, kar ve marj hesaplar.
+     */
     public function profitability(Request $request): JsonResponse
     {
-        return response()->json(['success' => true, 'data' => []]);
+        $request->validate([
+            'cafe_id'    => 'required|integer',
+            'start_date' => 'nullable|date',
+            'end_date'   => 'nullable|date',
+        ]);
+
+        $cafeId    = $request->cafe_id;
+        $startDate = $request->start_date ?? now()->startOfMonth()->toDateString();
+        $endDate   = $request->end_date   ?? now()->toDateString();
+
+        $products = PastItem::where('past_items.cafe_id', $cafeId)
+            ->join('past_orders', function ($join) use ($cafeId) {
+                $join->on('past_items.order_number', '=', 'past_orders.order_number')
+                     ->where('past_orders.cafe_id', '=', $cafeId);
+            })
+            ->whereBetween('past_orders.created_at', [$startDate, $endDate])
+            ->select(
+                'past_items.product_id',
+                'past_items.product_name',
+                DB::raw('SUM(past_items.quantity) as total_quantity'),
+                DB::raw('SUM(past_items.quantity * past_items.price) as total_amount'),
+                DB::raw('SUM(past_items.quantity * past_items.cost) as totalCost')
+            )
+            ->groupBy('past_items.product_id', 'past_items.product_name')
+            ->orderByDesc('total_amount')
+            ->get();
+
+        $data = $products->map(function ($p) {
+            $revenue  = (float) $p->total_amount;
+            $cost     = (float) $p->totalCost;
+            $profit   = $revenue - $cost;
+            $margin   = $revenue > 0 ? round(($profit / $revenue) * 100, 1) : 0;
+            $quantity = (int) $p->total_quantity;
+            $unitCost = $quantity > 0 ? round($cost / $quantity, 2) : 0;
+
+            return [
+                'product_id'     => $p->product_id,
+                'product_name'   => $p->product_name,
+                'total_quantity' => $quantity,
+                'total_amount'   => $revenue,
+                'totalCost'      => $cost,
+                'profit'         => $profit,
+                'margin'         => $margin,
+                'unitCost'       => $unitCost,
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'data'    => $data,
+        ]);
     }
 
+    /**
+     * Satılmayan Ürünler Raporu
+     * Seçilen dönemde hiç satışı olmayan ürünleri listeler.
+     * Ana backend'den ürün listesini almak yerine, past_items'da olan ürünleri bulup
+     * dışarda kalanları döndürür.
+     */
     public function unsoldProducts(Request $request): JsonResponse
     {
-        return response()->json(['success' => true, 'data' => []]);
+        $request->validate([
+            'cafe_id'    => 'required|integer',
+            'start_date' => 'nullable|date',
+            'end_date'   => 'nullable|date',
+        ]);
+
+        $cafeId    = $request->cafe_id;
+        $startDate = $request->start_date ?? now()->startOfMonth()->toDateString();
+        $endDate   = $request->end_date   ?? now()->toDateString();
+
+        // Dönem içinde satılan ürün ID'leri
+        $soldIds = PastItem::where('past_items.cafe_id', $cafeId)
+            ->join('past_orders', function ($join) use ($cafeId) {
+                $join->on('past_items.order_number', '=', 'past_orders.order_number')
+                     ->where('past_orders.cafe_id', '=', $cafeId);
+            })
+            ->whereBetween('past_orders.created_at', [$startDate, $endDate])
+            ->distinct()
+            ->pluck('past_items.product_id')
+            ->filter()
+            ->toArray();
+
+        // Tüm dönemde bilinen ürünler (en az bir kez satılmış)
+        $allProducts = PastItem::where('cafe_id', $cafeId)
+            ->select('product_id', 'product_name')
+            ->distinct()
+            ->get();
+
+        $unsold = $allProducts
+            ->filter(fn ($p) => !in_array($p->product_id, $soldIds))
+            ->map(fn ($p) => [
+                'product_id'   => $p->product_id,
+                'product_name' => $p->product_name,
+            ])
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'data'    => $unsold,
+        ]);
     }
 
+    /**
+     * Masa Doluluk Raporu
+     * past_orders tablosundan masa bazlı sipariş sayısı ve ciro gösterir.
+     */
     public function tableOccupancy(Request $request): JsonResponse
     {
-        return response()->json(['success' => true, 'data' => []]);
+        $request->validate([
+            'cafe_id'    => 'required|integer',
+            'start_date' => 'nullable|date',
+            'end_date'   => 'nullable|date',
+        ]);
+
+        $cafeId    = $request->cafe_id;
+        $startDate = $request->start_date ?? now()->startOfMonth()->toDateString();
+        $endDate   = $request->end_date   ?? now()->toDateString();
+
+        $tables = PastOrder::where('cafe_id', $cafeId)
+            ->whereNotNull('table_number')
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->select(
+                'table_number',
+                DB::raw('COUNT(*) as total_orders'),
+                DB::raw('SUM(total_amount) as total_amount'),
+                DB::raw('SUM(customer_male + customer_female + customer_child) as total_customers')
+            )
+            ->groupBy('table_number')
+            ->orderByDesc('total_amount')
+            ->get();
+
+        $data = $tables->map(fn ($t) => [
+            'table_number'    => $t->table_number,
+            'table_name'      => 'Masa ' . $t->table_number,
+            'total_orders'    => (int) $t->total_orders,
+            'total_amount'    => (float) $t->total_amount,
+            'total_customers' => (int) $t->total_customers,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'data'    => $data,
+        ]);
     }
 
     public function staffPerformance(Request $request): JsonResponse
