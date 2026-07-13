@@ -40,6 +40,7 @@ Route::middleware('service.token')->group(function () {
         Route::get('table-occupancy',         [ReportController::class, 'tableOccupancy']);
         Route::get('staff-performance',       [ReportController::class, 'staffPerformance']);
         Route::get('waste-report',            [ReportController::class, 'wasteReport']);
+        Route::get('customer-report',         [ReportController::class, 'customerReport']);
     });
 
     // ── Müşteri Carileri ──

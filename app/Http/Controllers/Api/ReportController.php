@@ -531,4 +531,172 @@ class ReportController extends Controller
             ]
         ]);
     }
+
+    public function customerReport(Request $request): JsonResponse
+    {
+        $request->validate([
+            'cafe_id'    => 'required|integer',
+            'start_date' => 'nullable|string',
+            'end_date'   => 'nullable|string',
+        ]);
+
+        $cafeId = $request->cafe_id;
+        $startDate = $request->start_date;
+        $endDate = $request->end_date;
+
+        $query = PastOrder::where('cafe_id', $cafeId);
+
+        if ($startDate && $endDate) {
+            $query->whereBetween('created_at', [$startDate, $endDate]);
+        }
+
+        // Summary stats
+        $stats = (clone $query)->select(
+            DB::raw('SUM(customer_male + customer_female + customer_child) as total_customers'),
+            DB::raw('SUM(customer_male) as total_male'),
+            DB::raw('SUM(customer_female) as total_female'),
+            DB::raw('SUM(customer_child) as total_child'),
+            DB::raw('COUNT(id) as total_orders'),
+            DB::raw('SUM(net_amount) as total_revenue')
+        )->first();
+
+        $totalCustomers = (int) ($stats->total_customers ?? 0);
+        $totalMale = (int) ($stats->total_male ?? 0);
+        $totalFemale = (int) ($stats->total_female ?? 0);
+        $totalChild = (int) ($stats->total_child ?? 0);
+        $totalOrders = (int) ($stats->total_orders ?? 0);
+        $totalRevenue = (float) ($stats->total_revenue ?? 0);
+
+        $avgSpend = $totalCustomers > 0 ? round($totalRevenue / $totalCustomers, 2) : 0;
+        $avgCustPerOrder = $totalOrders > 0 ? round($totalCustomers / $totalOrders, 1) : 0;
+
+        // Gender breakdown
+        $genderBreakdown = [];
+        if ($totalCustomers > 0) {
+            $genderBreakdown[] = [
+                'type' => 'Erkek',
+                'count' => $totalMale,
+                'percentage' => round(($totalMale / $totalCustomers) * 100, 1)
+            ];
+            $genderBreakdown[] = [
+                'type' => 'Kadın',
+                'count' => $totalFemale,
+                'percentage' => round(($totalFemale / $totalCustomers) * 100, 1)
+            ];
+            $genderBreakdown[] = [
+                'type' => 'Çocuk',
+                'count' => $totalChild,
+                'percentage' => round(($totalChild / $totalCustomers) * 100, 1)
+            ];
+        }
+
+        // Hourly distribution
+        $hourlyData = (clone $query)
+            ->select(
+                DB::raw('EXTRACT(HOUR FROM created_at) as hr'),
+                DB::raw('SUM(customer_male + customer_female + customer_child) as count')
+            )
+            ->groupBy('hr')
+            ->orderBy('hr')
+            ->get();
+
+        $hourlyMap = [];
+        for ($i = 0; $i < 24; $i++) {
+            $hourlyMap[$i] = 0;
+        }
+        foreach ($hourlyData as $row) {
+            $hourlyMap[(int) $row->hr] = (int) $row->count;
+        }
+        $hourlyDistribution = [];
+        foreach ($hourlyMap as $hour => $count) {
+            $hourlyDistribution[] = ['hour' => $hour, 'count' => $count];
+        }
+
+        // Daily trend
+        $dailyData = (clone $query)
+            ->select(
+                DB::raw('DATE(created_at) as dt'),
+                DB::raw('SUM(customer_male + customer_female + customer_child) as customers'),
+                DB::raw('SUM(net_amount) as revenue')
+            )
+            ->groupBy('dt')
+            ->orderBy('dt')
+            ->get();
+
+        $dailyTrend = $dailyData->map(fn($row) => [
+            'date' => $row->dt,
+            'customers' => (int) $row->customers,
+            'revenue' => (float) $row->revenue
+        ])->values()->all();
+
+        // Top spending orders
+        $topSpending = (clone $query)
+            ->where('net_amount', '>', 0)
+            ->orderBy('net_amount', 'desc')
+            ->limit(5)
+            ->get();
+
+        $topSpendingOrders = $topSpending->map(fn($o) => [
+            'order_number' => $o->order_number,
+            'total_amount' => $o->net_amount,
+            'customer_count' => ($o->customer_male + $o->customer_female + $o->customer_child) ?: 1,
+            'date' => $o->created_at->toDateTimeString()
+        ])->values()->all();
+
+        // Visit frequency (based on guest count size per order)
+        $groupStats = (clone $query)->select(
+            DB::raw('SUM(CASE WHEN (customer_male + customer_female + customer_child) = 1 THEN 1 ELSE 0 END) as single_count'),
+            DB::raw('SUM(CASE WHEN (customer_male + customer_female + customer_child) = 2 THEN 1 ELSE 0 END) as double_count'),
+            DB::raw('SUM(CASE WHEN (customer_male + customer_female + customer_child) BETWEEN 3 AND 4 THEN 1 ELSE 0 END) as small_group_count'),
+            DB::raw('SUM(CASE WHEN (customer_male + customer_female + customer_child) >= 5 THEN 1 ELSE 0 END) as group_count')
+        )->first();
+
+        $single = (int) ($groupStats->single_count ?? 0);
+        $double = (int) ($groupStats->double_count ?? 0);
+        $smallGroup = (int) ($groupStats->small_group_count ?? 0);
+        $group = (int) ($groupStats->group_count ?? 0);
+        $totalFreq = $single + $double + $smallGroup + $group;
+
+        $visitFrequency = [
+            [
+                'range' => 'Tek Başına',
+                'count' => $single,
+                'percentage' => $totalFreq > 0 ? round(($single / $totalFreq) * 100, 1) : 0
+            ],
+            [
+                'range' => 'İki Kişi',
+                'count' => $double,
+                'percentage' => $totalFreq > 0 ? round(($double / $totalFreq) * 100, 1) : 0
+            ],
+            [
+                'range' => 'Küçük Grup (3-4)',
+                'count' => $smallGroup,
+                'percentage' => $totalFreq > 0 ? round(($smallGroup / $totalFreq) * 100, 1) : 0
+            ],
+            [
+                'range' => 'Grup (5+)',
+                'count' => $group,
+                'percentage' => $totalFreq > 0 ? round(($group / $totalFreq) * 100, 1) : 0
+            ],
+        ];
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'total_customers' => $totalCustomers,
+                'total_male' => $totalMale,
+                'total_female' => $totalFemale,
+                'total_child' => $totalChild,
+                'total_orders' => $totalOrders,
+                'total_revenue' => $totalRevenue,
+                'avg_spend_per_customer' => $avgSpend,
+                'avg_customers_per_order' => $avgCustPerOrder,
+                'hourly_distribution' => $hourlyDistribution,
+                'daily_trend' => $dailyTrend,
+                'gender_breakdown' => $genderBreakdown,
+                'top_spending_orders' => $topSpendingOrders,
+                'visit_frequency' => $visitFrequency
+            ]
+        ]);
+    }
 }
