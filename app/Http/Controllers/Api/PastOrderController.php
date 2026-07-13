@@ -307,4 +307,71 @@ class PastOrderController extends Controller
             ],
         ]);
     }
+
+    /**
+     * Geriye dönük olarak past_items tablosundaki tax_rate'leri güncelle.
+     * Pos-Backend'den product_id → tax_rate eşleşmesi gönderilir.
+     *
+     * POST /api/backfill-tax-rates
+     * Body: { cafe_id: int, products: [{ product_id: int, tax_rate: float, cost: float }] }
+     */
+    public function backfillTaxRates(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'cafe_id'              => 'required|integer',
+            'products'             => 'required|array',
+            'products.*.product_id' => 'required|integer',
+            'products.*.tax_rate'   => 'required|numeric',
+            'products.*.cost'       => 'nullable|numeric',
+        ]);
+
+        $cafeId = $validated['cafe_id'];
+        $updated = 0;
+
+        try {
+            DB::beginTransaction();
+
+            foreach ($validated['products'] as $product) {
+                $updateData = ['tax_rate' => $product['tax_rate']];
+                if (isset($product['cost'])) {
+                    $updateData['cost'] = $product['cost'];
+                }
+
+                $count = PastItem::where('cafe_id', $cafeId)
+                    ->where('product_id', $product['product_id'])
+                    ->where('tax_rate', 0)
+                    ->update($updateData);
+
+                $updated += $count;
+            }
+
+            DB::commit();
+
+            // Raporları yeniden hesapla
+            $dates = PastOrder::where('cafe_id', $cafeId)
+                ->select(DB::raw('DISTINCT DATE(created_at) as dt'))
+                ->pluck('dt');
+
+            foreach ($dates as $date) {
+                try {
+                    AggregatePastOrdersJob::dispatchSync($date, $cafeId);
+                } catch (\Throwable $e) {
+                    Log::warning("Backfill aggregate hatası ($date): " . $e->getMessage());
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => "$updated adet past_item vergi oranı güncellendi.",
+                'updated_count' => $updated,
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            Log::error('backfillTaxRates hatası: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Güncelleme hatası: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
 }
