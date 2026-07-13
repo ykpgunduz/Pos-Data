@@ -15,43 +15,92 @@ class ReportController extends Controller
 {
     /**
      * Günlük Satış Raporu
-     * GET /api/reports/daily-sales?cafe_id=X&start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
+     * GET /api/reports/daily-sales?cafe_id=X&start_date=YYYY-MM-DD HH:mm:ss&end_date=YYYY-MM-DD HH:mm:ss
      *
-     * Hazır özet tablolardan çeker — 1 yıllık sorgu bile sadece ~365 satırdır.
+     * Gerçek zamanlı (dinamik) olarak geçmiş siparişler tablosundan hesaplar.
      */
     public function dailySales(Request $request): JsonResponse
     {
         $request->validate([
             'cafe_id'    => 'required|integer',
-            'start_date' => 'nullable|date',
-            'end_date'   => 'nullable|date',
-            'date'       => 'nullable|date',
+            'start_date' => 'nullable|string',
+            'end_date'   => 'nullable|string',
+            'date'       => 'nullable|string',
         ]);
 
         $cafeId    = $request->cafe_id;
-        $startDate = $request->start_date ?? ($request->date ?? now()->toDateString());
-        $endDate   = $request->end_date   ?? ($request->date ?? now()->toDateString());
+        $startDate = $request->start_date ?? ($request->date ?? now()->startOfDay()->toDateTimeString());
+        $endDate   = $request->end_date   ?? ($request->date ?? now()->endOfDay()->toDateTimeString());
 
-        $summaries = DailySalesSummary::where('cafe_id', $cafeId)
-            ->whereBetween('date', [$startDate, $endDate])
-            ->orderBy('date')
+        // 1. past_orders tablosundan genel ciro ve müşteri sayıları vb.
+        $ordersStats = PastOrder::where('cafe_id', $cafeId)
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->select(
+                DB::raw('SUM(total_amount) as total_sales'),
+                DB::raw('COUNT(*) as total_orders'),
+                DB::raw('SUM(customer_male + customer_female + customer_child) as total_customers'),
+                DB::raw('SUM(customer_male) as total_male'),
+                DB::raw('SUM(customer_female) as total_female'),
+                DB::raw('SUM(customer_child) as total_child'),
+                DB::raw('SUM(cash) as total_cash'),
+                DB::raw('SUM(card) as total_card'),
+                DB::raw('SUM(iban) as total_iban'),
+                DB::raw('SUM(treat) as total_treat'),
+                DB::raw('SUM(discount) as total_discount'),
+                DB::raw('SUM(net_amount) as total_net')
+            )
+            ->first();
+
+        // 2. past_items tablosundan maliyet (totalCost) ve vergi (totalTax) hesaplama
+        $itemsStats = PastItem::where('past_items.cafe_id', $cafeId)
+            ->join('past_orders', function ($join) use ($cafeId) {
+                $join->on('past_items.order_number', '=', 'past_orders.order_number')
+                     ->where('past_orders.cafe_id', '=', $cafeId);
+            })
+            ->whereBetween('past_orders.created_at', [$startDate, $endDate])
+            ->select(
+                DB::raw('SUM(past_items.quantity * past_items.cost) as total_cost'),
+                DB::raw('SUM(past_items.quantity * past_items.price) as gross_sales')
+                // Vergi aslında tax_rate'e göre brüt - net farkından hesaplanmalı ama burada basitçe genel bir değer veya brüt fiyatlar üzerinden hesaplayabiliriz.
+                // Gerçek KDV hesabı taxReport içinde detaylı var, burada aggregate edilmiş KDV lazım.
+            )
+            ->first();
+
+        // KDV hesaplamasını doğru yapmak için her kalemin kendi tax_rate'i ile matrah bulmalıyız
+        $taxQuery = PastItem::where('past_items.cafe_id', $cafeId)
+            ->join('past_orders', function ($join) use ($cafeId) {
+                $join->on('past_items.order_number', '=', 'past_orders.order_number')
+                     ->where('past_orders.cafe_id', '=', $cafeId);
+            })
+            ->whereBetween('past_orders.created_at', [$startDate, $endDate])
+            ->select(
+                'past_items.tax_rate',
+                DB::raw('SUM(past_items.quantity * past_items.price) as gross_sales')
+            )
+            ->groupBy('past_items.tax_rate')
             ->get();
 
-        // Toplamları hesapla
-        $totalSales     = $summaries->sum('total_turnover');
-        $totalOrders    = $summaries->sum('total_orders');
-        $totalCustomers = $summaries->sum('total_customers');
-        $totalCash      = $summaries->sum('total_cash');
-        $totalCard      = $summaries->sum('total_card');
-        $totalIban      = $summaries->sum('total_iban');
-        $totalTreat     = $summaries->sum('total_treat');
-        $totalDiscount  = $summaries->sum('total_discount');
-        $totalNet       = $summaries->sum('total_net_amount');
-        $totalTax       = $summaries->sum('total_tax_amount');
-        $totalMale      = $summaries->sum('total_customer_male');
-        $totalFemale    = $summaries->sum('total_customer_female');
-        $totalChild     = $summaries->sum('total_customer_child');
-        $totalCost      = $summaries->sum('total_cost');
+        $totalTax = 0;
+        foreach ($taxQuery as $row) {
+            $rate = (float) $row->tax_rate;
+            $gross = (float) $row->gross_sales;
+            $net = $rate > 0 ? round($gross / (1 + $rate / 100), 2) : $gross;
+            $totalTax += ($gross - $net);
+        }
+
+        $totalSales     = (float) $ordersStats->total_sales;
+        $totalOrders    = (int) $ordersStats->total_orders;
+        $totalCustomers = (int) $ordersStats->total_customers;
+        $totalCash      = (float) $ordersStats->total_cash;
+        $totalCard      = (float) $ordersStats->total_card;
+        $totalIban      = (float) $ordersStats->total_iban;
+        $totalTreat     = (float) $ordersStats->total_treat;
+        $totalDiscount  = (float) $ordersStats->total_discount;
+        $totalNet       = (float) $ordersStats->total_net;
+        $totalCost      = (float) $itemsStats->total_cost;
+        $totalMale      = (int) $ordersStats->total_male;
+        $totalFemale    = (int) $ordersStats->total_female;
+        $totalChild     = (int) $ordersStats->total_child;
 
         // Ödeme türleri
         $paymentTypes = [
@@ -61,14 +110,22 @@ class ReportController extends Controller
         ];
 
         // Günlük zaman serisi (chart verisi)
-        $dailySeries = $summaries->map(fn ($s) => [
-            'date'   => $s->date->format('Y-m-d'),
-            'amount' => $s->total_turnover,
-            'orders' => $s->total_orders,
-        ])->values();
+        $dailySeries = PastOrder::where('cafe_id', $cafeId)
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->selectRaw('DATE(created_at) as date, SUM(total_amount) as amount, COUNT(*) as orders')
+            ->groupByRaw('DATE(created_at)')
+            ->orderBy('date')
+            ->get()
+            ->map(fn ($s) => [
+                'date'   => $s->date,
+                'amount' => (float) $s->amount,
+                'orders' => (int) $s->orders,
+            ])
+            ->values();
 
         // Kar = Net Ciro (KDV hariç) - Toplam Gider
-        $totalProfit = $totalNet - $totalCost;
+        // Ancak bu sadece satılan ürünün maliyetine göre kar. İşletme giderleri hariç.
+        $totalProfit = $totalSales - $totalTax - $totalCost;
 
         return response()->json([
             'success' => true,
@@ -80,7 +137,7 @@ class ReportController extends Controller
                 'customer_male'       => $totalMale,
                 'customer_female'     => $totalFemale,
                 'customer_child'      => $totalChild,
-                'total_net'           => $totalNet,
+                'total_net'           => $totalSales - $totalTax,
                 'total_tax'           => $totalTax,
                 'total_treat'         => $totalTreat,
                 'total_discount'      => $totalDiscount,
@@ -196,24 +253,28 @@ class ReportController extends Controller
 
     /**
      * En Çok Satan Ürünler Raporu
-     * GET /api/reports/product-sales?cafe_id=X&start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
+     * GET /api/reports/product-sales?cafe_id=X&start_date=YYYY-MM-DD HH:mm:ss&end_date=YYYY-MM-DD HH:mm:ss
      */
     public function productSales(Request $request): JsonResponse
     {
         $request->validate([
             'cafe_id'    => 'required|integer',
-            'start_date' => 'nullable|date',
-            'end_date'   => 'nullable|date',
+            'start_date' => 'nullable|string',
+            'end_date'   => 'nullable|string',
         ]);
 
         $cafeId    = $request->cafe_id;
-        $startDate = $request->start_date ?? now()->startOfMonth()->toDateString();
-        $endDate   = $request->end_date   ?? now()->toDateString();
+        $startDate = $request->start_date ?? now()->startOfDay()->toDateTimeString();
+        $endDate   = $request->end_date   ?? now()->endOfDay()->toDateTimeString();
 
-        $products = ProductSalesSummary::where('cafe_id', $cafeId)
-            ->whereBetween('date', [$startDate, $endDate])
-            ->selectRaw('product_id, product_name, SUM(quantity_sold) as total_quantity, SUM(total_revenue) as total_amount')
-            ->groupBy('product_id', 'product_name')
+        $products = PastItem::where('past_items.cafe_id', $cafeId)
+            ->join('past_orders', function ($join) use ($cafeId) {
+                $join->on('past_items.order_number', '=', 'past_orders.order_number')
+                     ->where('past_orders.cafe_id', '=', $cafeId);
+            })
+            ->whereBetween('past_orders.created_at', [$startDate, $endDate])
+            ->selectRaw('past_items.product_id, past_items.product_name, SUM(past_items.quantity) as total_quantity, SUM(past_items.quantity * past_items.price) as total_amount')
+            ->groupBy('past_items.product_id', 'past_items.product_name')
             ->orderByDesc('total_quantity')
             ->get();
 
@@ -225,35 +286,58 @@ class ReportController extends Controller
 
     /**
      * İkram ve İndirim Raporu
-     * GET /api/reports/complimentary-discount?cafe_id=X&start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
+     * GET /api/reports/complimentary-discount?cafe_id=X&start_date=YYYY-MM-DD HH:mm:ss&end_date=YYYY-MM-DD HH:mm:ss
      */
     public function complimentaryDiscount(Request $request): JsonResponse
     {
         $request->validate([
             'cafe_id'    => 'required|integer',
-            'start_date' => 'nullable|date',
-            'end_date'   => 'nullable|date',
+            'start_date' => 'nullable|string',
+            'end_date'   => 'nullable|string',
         ]);
 
         $cafeId    = $request->cafe_id;
-        $startDate = $request->start_date ?? now()->startOfMonth()->toDateString();
-        $endDate   = $request->end_date   ?? now()->toDateString();
+        $startDate = $request->start_date ?? now()->startOfDay()->toDateTimeString();
+        $endDate   = $request->end_date   ?? now()->endOfDay()->toDateTimeString();
 
-        $summaries = DailySalesSummary::where('cafe_id', $cafeId)
-            ->whereBetween('date', [$startDate, $endDate])
+        $orders = PastOrder::where('cafe_id', $cafeId)
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->where(function ($q) {
+                $q->where('treat', '>', 0)->orWhere('discount', '>', 0);
+            })
             ->get();
+
+        $data = [];
+        foreach ($orders as $o) {
+            if ($o->treat > 0) {
+                $data[] = [
+                    'id'     => $o->order_number . '_treat',
+                    'type'   => 'İkram',
+                    'item'   => 'Adisyon İkramı',
+                    'user'   => $o->closed_by_name ?? ($o->closed_by ?? 'Personel'),
+                    'role'   => 'Personel',
+                    'reason' => 'Genel İkram',
+                    'amount' => (float) $o->treat,
+                    'date'   => $o->created_at->format('Y-m-d H:i')
+                ];
+            }
+            if ($o->discount > 0) {
+                $data[] = [
+                    'id'     => $o->order_number . '_disc',
+                    'type'   => 'İndirim',
+                    'item'   => 'Adisyon İndirimi',
+                    'user'   => $o->closed_by_name ?? ($o->closed_by ?? 'Personel'),
+                    'role'   => 'Personel',
+                    'reason' => 'Genel İndirim',
+                    'amount' => (float) $o->discount,
+                    'date'   => $o->created_at->format('Y-m-d H:i')
+                ];
+            }
+        }
 
         return response()->json([
             'success' => true,
-            'data'    => [
-                'total_treat'    => $summaries->sum('total_treat'),
-                'total_discount' => $summaries->sum('total_discount'),
-                'daily' => $summaries->map(fn ($s) => [
-                    'date'     => $s->date->format('Y-m-d'),
-                    'treat'    => $s->total_treat,
-                    'discount' => $s->total_discount,
-                ])->values(),
-            ],
+            'data'    => $data,
         ]);
     }
 
