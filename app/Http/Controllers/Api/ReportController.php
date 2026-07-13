@@ -561,16 +561,16 @@ class ReportController extends Controller
 
     public function staffPerformance(Request $request): JsonResponse
     {
-        $request->validate(['cafe_id' => 'required|integer', 'start_date' => 'nullable|date', 'end_date' => 'nullable|date']);
+        $request->validate(['cafe_id' => 'required|integer', 'start_date' => 'nullable|string', 'end_date' => 'nullable|string']);
         $cafeId       = $request->cafe_id;
-        $startDateVal = $request->start_date ? $request->start_date . ' 00:00:00' : now()->startOfMonth()->toDateTimeString();
-        $endDateVal   = $request->end_date   ? $request->end_date . ' 23:59:59'   : now()->endOfDay()->toDateTimeString();
+        $startDateVal = $request->start_date ?? now()->startOfDay()->toDateTimeString();
+        $endDateVal   = $request->end_date   ?? now()->endOfDay()->toDateTimeString();
 
         $staffs = PastOrder::where('cafe_id', $cafeId)
             ->whereBetween('created_at', [$startDateVal, $endDateVal])
-            ->whereNotNull('closed_by')
-            ->selectRaw('closed_by as user_name, SUM(total_amount) as total_sales, COUNT(*) as orders_handled')
-            ->groupBy('closed_by')
+            ->selectRaw("COALESCE(closed_by_name, closed_by, 'Yönetici') as user_name, SUM(total_amount) as total_sales, COUNT(*) as orders_handled")
+            ->groupByRaw("COALESCE(closed_by_name, closed_by, 'Yönetici')")
+            ->orderByDesc('total_sales')
             ->get();
 
         $data = $staffs->map(function ($s, $i) {
