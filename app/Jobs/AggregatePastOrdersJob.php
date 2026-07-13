@@ -146,7 +146,7 @@ class AggregatePastOrdersJob implements ShouldQueue
             'past_items.product_id',
             'past_items.product_name',
             DB::raw('SUM(past_items.quantity) as quantity_sold'),
-            DB::raw('SUM(past_items.price) as total_revenue'),
+            DB::raw('SUM(past_items.price * past_items.quantity) as total_revenue'),
         )
         ->groupBy('past_items.cafe_id', 'past_items.product_id', 'past_items.product_name')
         ->orderBy('past_items.cafe_id')

@@ -214,7 +214,7 @@ class ReportController extends Controller
             ->whereBetween('date', [$startDate, $endDate])
             ->selectRaw('product_id, product_name, SUM(quantity_sold) as total_quantity, SUM(total_revenue) as total_amount')
             ->groupBy('product_id', 'product_name')
-            ->orderByDesc('total_amount')
+            ->orderByDesc('total_quantity')
             ->get();
 
         return response()->json([
@@ -478,12 +478,12 @@ class ReportController extends Controller
     public function staffPerformance(Request $request): JsonResponse
     {
         $request->validate(['cafe_id' => 'required|integer', 'start_date' => 'nullable|date', 'end_date' => 'nullable|date']);
-        $cafeId = $request->cafe_id;
-        $startDate = $request->start_date ?? now()->startOfMonth()->toDateString();
-        $endDate = $request->end_date ?? now()->toDateString();
+        $cafeId       = $request->cafe_id;
+        $startDateVal = $request->start_date ? $request->start_date . ' 00:00:00' : now()->startOfMonth()->toDateTimeString();
+        $endDateVal   = $request->end_date   ? $request->end_date . ' 23:59:59'   : now()->endOfDay()->toDateTimeString();
 
         $staffs = PastOrder::where('cafe_id', $cafeId)
-            ->whereBetween('created_at', [$startDate, $endDate])
+            ->whereBetween('created_at', [$startDateVal, $endDateVal])
             ->whereNotNull('closed_by')
             ->selectRaw('closed_by as user_name, SUM(total_amount) as total_sales, COUNT(*) as orders_handled')
             ->groupBy('closed_by')
