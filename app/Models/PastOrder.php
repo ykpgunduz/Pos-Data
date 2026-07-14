@@ -27,6 +27,8 @@ class PastOrder extends Model
         'closed_by',
         'opened_by_name',
         'closed_by_name',
+        'created_at',
+        'updated_at',
     ];
 
     protected $attributes = [

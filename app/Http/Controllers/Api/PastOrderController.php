@@ -41,6 +41,8 @@ class PastOrderController extends Controller
             'closed_by'        => 'nullable|string|max:100',
             'opened_by_name'   => 'nullable|string|max:100',
             'closed_by_name'   => 'nullable|string|max:100',
+            'created_at'       => 'nullable|date',
+            'updated_at'       => 'nullable|date',
             // Ürün detayları
             'items'            => 'nullable|array',
             'items.*.product_id'   => 'nullable|integer',
