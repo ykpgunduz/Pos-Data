@@ -238,6 +238,7 @@ class PastOrderController extends Controller
             DB::raw('SUM(card) as total_card'),
             DB::raw('SUM(CAST(iban AS NUMERIC)) as total_iban'),
             DB::raw('SUM(treat) as total_treat'),
+            DB::raw('SUM(discount) as total_discount'),
             DB::raw('SUM(total_amount) as total_gross'),
             DB::raw('SUM(net_amount) as total_net')
         )->first();
@@ -256,6 +257,7 @@ class PastOrderController extends Controller
             'total_iban'            => (int) ($totals->total_iban ?? 0),
             'total_cari'            => (int) $totalCari,
             'total_treat'           => (int) ($totals->total_treat ?? 0),
+            'total_discount'        => (int) ($totals->total_discount ?? 0),
             'total_gross'           => (int) ($totals->total_gross ?? 0),
             'total_net'             => (int) ($totals->total_net ?? 0),
         ];
