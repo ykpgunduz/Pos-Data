@@ -31,7 +31,7 @@ class CariAccountController extends Controller
             $spending = (float) PastOrder::where('cafe_id', $account->cafe_id)
                 ->where('cari_account_id', $account->id)
                 ->where('status', 'completed')
-                ->sum('total');
+                ->sum('total_amount');
 
             $balance = (float) ($account->current_balance ?? 0);
             $payments = $spending + $balance;
@@ -58,7 +58,7 @@ class CariAccountController extends Controller
         $spending = (float) PastOrder::where('cafe_id', $account->cafe_id)
             ->where('cari_account_id', $account->id)
             ->where('status', 'completed')
-            ->sum('total');
+            ->sum('total_amount');
 
         $balance = (float) $account->current_balance;
         $payments = $spending + $balance;
