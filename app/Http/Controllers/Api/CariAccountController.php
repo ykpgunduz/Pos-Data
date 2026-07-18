@@ -30,7 +30,6 @@ class CariAccountController extends Controller
         $accounts->getCollection()->transform(function ($account) {
             $spending = (float) PastOrder::where('cafe_id', $account->cafe_id)
                 ->where('cari_account_id', $account->id)
-                ->where('status', 'completed')
                 ->sum('total_amount');
 
             $balance = (float) ($account->current_balance ?? 0);
@@ -57,7 +56,6 @@ class CariAccountController extends Controller
 
         $spending = (float) PastOrder::where('cafe_id', $account->cafe_id)
             ->where('cari_account_id', $account->id)
-            ->where('status', 'completed')
             ->sum('total_amount');
 
         $balance = (float) $account->current_balance;
